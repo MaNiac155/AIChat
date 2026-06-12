@@ -1,0 +1,210 @@
+.avatar-character {
+  animation: avatar-enter 260ms ease-out both;
+  transform-origin: center bottom;
+}
+
+.avatar-state-badge {
+  border: 1px solid rgb(104 215 169 / 18%);
+  background: rgb(104 215 169 / 8%);
+  color: #9ae8c7;
+}
+
+.avatar-caption strong {
+  margin-right: 8px;
+  color: #d8819b;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.avatar-state-effect {
+  position: absolute;
+  z-index: 3;
+  right: 15%;
+  bottom: 31%;
+  display: flex;
+  height: 32px;
+  align-items: flex-end;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.avatar-state-effect span {
+  width: 3px;
+  height: 8px;
+  border-radius: 999px;
+  background: #e0809c;
+}
+
+.avatar-state-idle .avatar-character {
+  animation:
+    avatar-enter 260ms ease-out both,
+    avatar-idle 4s ease-in-out 260ms infinite;
+}
+
+.avatar-state-listening .avatar-character {
+  animation:
+    avatar-enter 260ms ease-out both,
+    avatar-listening 1.5s ease-in-out 260ms infinite;
+}
+
+.avatar-state-listening .avatar-orbit-small {
+  animation: listening-orbit 2.2s linear infinite;
+  border-color: rgb(104 215 169 / 30%);
+}
+
+.avatar-state-listening .avatar-state-badge,
+.avatar-state-listening .status-dot {
+  color: #9ae8c7;
+}
+
+.avatar-state-thinking .avatar-character {
+  animation:
+    avatar-enter 260ms ease-out both,
+    avatar-thinking 2s ease-in-out 260ms infinite;
+}
+
+.avatar-state-thinking .avatar-glow {
+  background: rgb(168 106 209 / 24%);
+  animation: thinking-glow 1.5s ease-in-out infinite;
+}
+
+.avatar-state-thinking .avatar-state-badge {
+  border-color: rgb(168 106 209 / 24%);
+  background: rgb(168 106 209 / 10%);
+  color: #d5afea;
+}
+
+.avatar-state-thinking .status-dot {
+  background: #b985d6;
+  box-shadow: 0 0 12px rgb(185 133 214 / 85%);
+}
+
+.avatar-state-talking .avatar-character {
+  animation:
+    avatar-enter 260ms ease-out both,
+    avatar-talking 520ms ease-in-out 260ms infinite alternate;
+}
+
+.avatar-state-talking .avatar-state-effect {
+  opacity: 1;
+}
+
+.avatar-state-talking .avatar-state-effect span {
+  animation: talking-wave 650ms ease-in-out infinite alternate;
+}
+
+.avatar-state-talking .avatar-state-effect span:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.avatar-state-talking .avatar-state-effect span:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+.avatar-state-talking .avatar-state-badge {
+  border-color: rgb(226 118 152 / 30%);
+  background: rgb(141 40 70 / 18%);
+  color: #f0bfd0;
+}
+
+.avatar-state-talking .status-dot {
+  background: #e27698;
+  box-shadow: 0 0 12px rgb(226 118 152 / 85%);
+}
+
+@keyframes avatar-enter {
+  from {
+    opacity: 0.6;
+    transform: translateY(8px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes avatar-idle {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-5px) scale(1.006);
+  }
+}
+
+@keyframes avatar-listening {
+  0%,
+  100% {
+    transform: rotate(-0.5deg) translateY(0);
+  }
+
+  50% {
+    transform: rotate(0.8deg) translateY(-3px);
+  }
+}
+
+@keyframes listening-orbit {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes avatar-thinking {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px) rotate(-0.4deg);
+  }
+}
+
+@keyframes thinking-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.15);
+  }
+}
+
+@keyframes avatar-talking {
+  from {
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    transform: translateY(-2px) scale(1.008);
+  }
+}
+
+@keyframes talking-wave {
+  from {
+    height: 7px;
+    opacity: 0.5;
+  }
+
+  to {
+    height: 28px;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-character,
+  .avatar-orbit,
+  .avatar-glow,
+  .avatar-state-effect span {
+    animation: none !important;
+  }
+}
