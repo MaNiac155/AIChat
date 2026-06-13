@@ -14,9 +14,15 @@
 - `idle`、`listening`、`thinking`、`talking` 角色状态联动。
 - 摄像头、模型、图片上传和浏览器能力错误提示。
 
+![项目截图](./docs/screenshot.png)
+
 ## demo视频
  通过网盘分享的文件：2026-06-13 21-36-07.mp4
 链接: https://pan.baidu.com/s/1MeayRV3OEhYq-kaW3d7mcA 提取码: ah12 复制这段内容后打开百度网盘手机App，操作更方便哦 
+
+
+
+
 
 
 ## 项目结构
