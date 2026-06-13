@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 
-function VoiceInput({ onListeningChange, onTranscript }) {
+function VoiceInput({ disabled = false, onListeningChange, onTranscript }) {
   const { error, isListening, isSupported, toggleListening } =
     useSpeechRecognition({ onTranscript })
 
@@ -17,10 +17,17 @@ function VoiceInput({ onListeningChange, onTranscript }) {
         type="button"
         aria-label={isListening ? '停止语音输入' : '开始语音输入'}
         aria-pressed={isListening}
+        disabled={disabled}
         onClick={toggleListening}
       >
         <span className="microphone-icon" aria-hidden="true" />
-        <span>{isListening ? '正在倾听，点击结束' : '开始说话'}</span>
+        <span>
+          {disabled
+            ? '正在处理上一条消息'
+            : isListening
+              ? '正在倾听，点击结束'
+              : '开始说话'}
+        </span>
         {isListening && <span className="listening-pulse" aria-hidden="true" />}
       </button>
 

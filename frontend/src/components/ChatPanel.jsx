@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react'
 
+import {
+  clearChatMemory,
+  sendChatMessage,
+  sendVisionQuestion,
+} from '../api/chat'
+import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis'
+import { needsVisionContext } from '../utils/intent'
 import VoiceInput from './VoiceInput'
 
 const initialMessages = [
@@ -19,6 +26,20 @@ function getMessageTime() {
   }).format(new Date())
 }
 
+function getSessionId() {
+  const storageKey = 'ai-chat-session-id'
+  const existingId = window.sessionStorage.getItem(storageKey)
+  if (existingId) {
+    return existingId
+  }
+
+  const sessionId =
+    window.crypto?.randomUUID?.() ||
+    `session-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  window.sessionStorage.setItem(storageKey, sessionId)
+  return sessionId
+}
+
 function ChatPanel({
   onActivityStateChange,
   onListeningChange,
@@ -26,50 +47,124 @@ function ChatPanel({
   visionAvailable,
 }) {
   const [captureFeedback, setCaptureFeedback] = useState('')
+  const [errorMessage, setErrorMessage] = useState('')
   const [inputValue, setInputValue] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSpeechEnabled, setIsSpeechEnabled] = useState(true)
+  const [isVisionEnabled, setIsVisionEnabled] = useState(false)
   const [messages, setMessages] = useState(initialMessages)
-  const activityTimersRef = useRef([])
-
-  const clearActivityTimers = () => {
-    activityTimersRef.current.forEach((timer) => window.clearTimeout(timer))
-    activityTimersRef.current = []
-  }
-
-  const runResponseStatePreview = () => {
-    clearActivityTimers()
-    onActivityStateChange?.('thinking')
-
-    activityTimersRef.current = [
-      window.setTimeout(() => onActivityStateChange?.('talking'), 850),
-      window.setTimeout(() => onActivityStateChange?.('idle'), 2450),
-    ]
-  }
-
-  useEffect(
-    () => () => {
-      clearActivityTimers()
+  const [workflowStatus, setWorkflowStatus] = useState('等待你的问题')
+  const sessionIdRef = useRef(getSessionId())
+  const {
+    cancel: cancelSpeech,
+    error: speechError,
+    isSpeaking,
+    isSupported: isSpeechSupported,
+    speak,
+  } = useSpeechSynthesis({
+    onEnd: () => {
+      setWorkflowStatus('回答完成')
+      onActivityStateChange?.('idle')
     },
-    [],
-  )
+    onStart: () => {
+      setWorkflowStatus('正在播放 AI 回复')
+      onActivityStateChange?.('talking')
+    },
+  })
 
-  const sendMessage = (content, metadata = {}) => {
+  useEffect(() => {
+    if (!visionAvailable) {
+      setIsVisionEnabled(false)
+      setCaptureFeedback('')
+    }
+  }, [visionAvailable])
+
+  const sendMessage = async (content, metadata = {}) => {
     const normalizedContent = content.trim()
-    if (!normalizedContent) {
+    if (!normalizedContent || isLoading) {
       return
     }
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: `${Date.now()}-${currentMessages.length}`,
-        role: 'user',
-        content: normalizedContent,
-        time: getMessageTime(),
-        ...metadata,
-      },
-    ])
+    const userMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: normalizedContent,
+      time: getMessageTime(),
+      ...metadata,
+    }
+
+    setMessages((currentMessages) => [...currentMessages, userMessage])
     setInputValue('')
-    runResponseStatePreview()
+    setErrorMessage('')
+    setIsLoading(true)
+    cancelSpeech()
+    setWorkflowStatus('正在生成回答')
+    onActivityStateChange?.('thinking')
+
+    try {
+      let visualContext = metadata.visualContext
+
+      const hasVisualIntent = needsVisionContext(normalizedContent)
+      const shouldUseVision = isVisionEnabled && hasVisualIntent
+
+      if (hasVisualIntent && !visionAvailable) {
+        throw new Error('请先开启摄像头')
+      }
+
+      if (shouldUseVision) {
+        setWorkflowStatus('正在理解当前画面')
+        const result = await onVisionCapture()
+        const feedback = `已截取当前画面：${result.width} × ${result.height}，${(
+          result.size / 1024
+        ).toFixed(1)} KB`
+        let vision
+        try {
+          vision = await sendVisionQuestion({ image: result.blob })
+        } catch (error) {
+          throw new Error('图片上传失败，请重试', { cause: error })
+        }
+
+        visualContext = vision.description
+        const costFeedback = vision.cache_reused
+          ? `复用视觉缓存 · 模型调用 ${vision.model_call_count} 次`
+          : `视觉模型调用 ${vision.model_call_count} 次`
+        setCaptureFeedback(`${feedback} · ${costFeedback} · ${vision.description}`)
+        setMessages((currentMessages) =>
+          currentMessages.map((message) =>
+            message.id === userMessage.id
+              ? { ...message, attachment: feedback }
+              : message,
+          ),
+        )
+        setWorkflowStatus('正在结合画面生成回答')
+      }
+
+      const response = await sendChatMessage({
+        message: normalizedContent,
+        sessionId: sessionIdRef.current,
+        visualContext,
+      })
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: response.reply,
+          time: getMessageTime(),
+        },
+      ])
+
+      if (!isSpeechEnabled || !speak(response.reply)) {
+        setWorkflowStatus('回答完成')
+        onActivityStateChange?.('idle')
+      }
+    } catch (error) {
+      setErrorMessage(error.message || '后端服务不可用，请稍后重试')
+      setWorkflowStatus('处理失败，可以继续提问')
+      onActivityStateChange?.('idle')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleSubmit = (event) => {
@@ -77,28 +172,18 @@ function ChatPanel({
     sendMessage(inputValue)
   }
 
-  const clearConversation = () => {
-    clearActivityTimers()
+  const clearConversation = async () => {
+    cancelSpeech()
     onActivityStateChange?.('idle')
     setCaptureFeedback('')
+    setErrorMessage('')
     setMessages(initialMessages)
-  }
-
-  const handleVisionSuggestion = async () => {
-    setCaptureFeedback('')
+    setWorkflowStatus('等待你的问题')
 
     try {
-      const result = await onVisionCapture()
-      const feedback = `已截取当前画面：${result.width} × ${result.height}，${(
-        result.size / 1024
-      ).toFixed(1)} KB`
-
-      setCaptureFeedback(feedback)
-      sendMessage('你看看桌上有什么？', {
-        attachment: feedback,
-      })
+      await clearChatMemory(sessionIdRef.current)
     } catch (error) {
-      setCaptureFeedback(error.message || '截图失败，请重试')
+      setErrorMessage(error.message || '清除后端记忆失败')
     }
   }
 
@@ -142,17 +227,29 @@ function ChatPanel({
           </article>
         ))}
 
+        {isLoading && (
+          <div className="chat-loading" role="status">
+            <span />
+            <span />
+            <span />
+            露米娅正在思考
+          </div>
+        )}
+
         <div className="suggestion-block">
           <p>试着这样问我</p>
           <button
             type="button"
-            disabled={!visionAvailable}
-            title={visionAvailable ? '使用当前摄像头画面提问' : '请先开启摄像头'}
-            onClick={handleVisionSuggestion}
+            disabled={isLoading}
+            onClick={() => sendMessage('你看看桌上有什么？')}
           >
             “你看看桌上有什么？”
           </button>
-          <button type="button" onClick={() => sendMessage('给我讲个有趣的故事')}>
+          <button
+            type="button"
+            disabled={isLoading}
+            onClick={() => sendMessage('给我讲个有趣的故事')}
+          >
             “给我讲个有趣的故事”
           </button>
           {captureFeedback && (
@@ -164,7 +261,54 @@ function ChatPanel({
       </div>
 
       <div className="chat-composer">
+        <div className="workflow-status" role="status">
+          <span aria-hidden="true" />
+          {workflowStatus}
+        </div>
+        <button
+          className={`speech-toggle ${isSpeechEnabled ? 'speech-toggle-active' : ''}`}
+          type="button"
+          aria-pressed={isSpeechEnabled}
+          disabled={!isSpeechSupported || isLoading}
+          onClick={() => {
+            setIsSpeechEnabled((current) => {
+              if (current) {
+                cancelSpeech()
+                onActivityStateChange?.('idle')
+              }
+              return !current
+            })
+          }}
+          title={
+            isSpeechSupported
+              ? '控制 AI 回复是否自动播放语音'
+              : '当前浏览器不支持语音播放'
+          }
+        >
+          <span className="speech-toggle-indicator" aria-hidden="true" />
+          <span>
+            回复语音
+            <strong>
+              {isSpeaking ? '播放中' : isSpeechEnabled ? '已开启' : '已关闭'}
+            </strong>
+          </span>
+        </button>
+        <button
+          className={`vision-toggle ${isVisionEnabled ? 'vision-toggle-active' : ''}`}
+          type="button"
+          aria-pressed={isVisionEnabled}
+          disabled={!visionAvailable || isLoading}
+          onClick={() => setIsVisionEnabled((current) => !current)}
+          title={visionAvailable ? '控制发送消息时是否调用视觉理解' : '请先开启摄像头'}
+        >
+          <span className="vision-toggle-indicator" aria-hidden="true" />
+          <span>
+            自动视觉理解
+            <strong>{isVisionEnabled ? '已开启' : '已关闭'}</strong>
+          </span>
+        </button>
         <VoiceInput
+          disabled={isLoading}
           onListeningChange={onListeningChange}
           onTranscript={sendMessage}
         />
@@ -175,17 +319,37 @@ function ChatPanel({
             onChange={(event) => setInputValue(event.target.value)}
             placeholder="输入消息，或使用语音提问..."
             aria-label="消息内容"
+            disabled={isLoading}
           />
           <button
             className="send-button"
             type="submit"
             aria-label="发送消息"
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || isLoading}
           >
             ↑
           </button>
         </form>
-        <p className="composer-hint">语音和文本将进入同一对话流程</p>
+        {errorMessage && (
+          <p className="chat-error" role="alert">
+            {errorMessage}
+          </p>
+        )}
+        {!isSpeechSupported && (
+          <p className="speech-error" role="status">
+            当前浏览器不支持语音播放
+          </p>
+        )}
+        {speechError && isSpeechSupported && (
+          <p className="speech-error" role="alert">
+            {speechError}
+          </p>
+        )}
+        <p className="composer-hint">
+          {isVisionEnabled
+            ? '仅在问题需要查看画面时，才会截图并调用视觉理解'
+            : '语音和文本将进入普通对话流程'}
+        </p>
       </div>
     </section>
   )
